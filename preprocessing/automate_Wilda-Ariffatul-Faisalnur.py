@@ -22,7 +22,7 @@ def automate_preprocessing(file_path):
     sns.heatmap(numeric_df.corr(), annot=True, cmap='coolwarm', fmt='.2f')
     plt.title('Korelasi Fitur Morfologi Beras')
     plt.tight_layout()
-    plt.savefig("/Volumes/Data/Program/ML PROJECT/preprocessing/rice_correlation.png")
+    plt.savefig("rice_correlation.png")
     
     # [3] Bersih-bersih (Handle Missing Values)
     # Cek kalau ada yang kosong, langsung buang aja barisnya
@@ -62,7 +62,7 @@ def automate_preprocessing(file_path):
     test_final['Class'] = y_test.values
 
     # [8] Simpan file buat dipake step training nanti
-    output_dir = "/Volumes/Data/Program/ML PROJECT/preprocessing/namadataset_preprocessing"
+    output_dir = "namadataset_preprocessing"
     os.makedirs(output_dir, exist_ok=True)
     
     train_final.to_csv(f"{output_dir}/rice_preprocessing_train.csv", index=False)
@@ -71,4 +71,4 @@ def automate_preprocessing(file_path):
     print(f"✅ Preprocessing BERES! File tersimpan di '{output_dir}'")
 
 if __name__ == "__main__":
-    automate_preprocessing("/Volumes/Data/Program/ML PROJECT/rice_dataset.csv")
+    automate_preprocessing("../rice_dataset.csv")
