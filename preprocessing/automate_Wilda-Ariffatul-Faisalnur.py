@@ -1,221 +1,110 @@
-"""
-automate_Wilda-Ariffatul-Faisalnur.py
-
-Script otomasi preprocessing dataset Wine Quality.
-Mengkonversi langkah-langkah yang ada pada notebook eksperimen
-menjadi pipeline preprocessing otomatis.
-
-Author: Wilda Ariffatul Faisalnur
-"""
-
 import pandas as pd
 import numpy as np
+import os
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-import os
-import warnings
-warnings.filterwarnings('ignore')
 
+# Konfigurasi Path
+DATA_PATH = "/Volumes/Data/Program/ML PROJECT/rice_dataset.csv"
+OUTPUT_DIR = "/Volumes/Data/Program/ML PROJECT/preprocessing/namadataset_preprocessing"
+SUBMISSION_DIR = "/Volumes/Data/Program/ML PROJECT/SMSML_Wilda-Ariffatul-Faisalnur/preprocessing/namadataset_preprocessing"
 
-def load_data(filepath):
-    """
-    Memuat dataset Wine Quality dari file CSV.
-    Dataset menggunakan separator semicolon (;).
-    
-    Args:
-        filepath (str): Path ke file CSV dataset
-    
-    Returns:
-        pd.DataFrame: Dataset yang sudah dimuat
-    """
-    print("[1/6] Memuat dataset...")
-    df = pd.read_csv(filepath, sep=';')
-    print(f"  Dataset berhasil dimuat: {df.shape[0]} baris, {df.shape[1]} kolom")
+def load_data(path):
+    print(f"📂 Loading data from {path}...")
+    df = pd.read_csv(path)
     return df
-
 
 def perform_eda(df):
-    """
-    Melakukan Exploratory Data Analysis sederhana.
-    Menampilkan informasi dasar tentang dataset.
+    print("📊 Performing EDA...")
+    print(f"Info Dataset:\n{df.info()}")
+    print(f"Statistik Deskriptif:\n{df.describe()}")
     
-    Args:
-        df (pd.DataFrame): Dataset untuk dianalisis
-    """
-    print("\n[2/6] Melakukan EDA...")
-    print(f"  Shape: {df.shape}")
-    print(f"  Missing values: {df.isnull().sum().sum()}")
-    print(f"  Duplikat: {df.duplicated().sum()}")
-    print(f"  Distribusi quality:\n{df['quality'].value_counts().sort_index().to_string()}")
-    print(f"  Statistik deskriptif:")
-    print(df.describe().to_string())
+    # Distribusi Target
+    plt.figure(figsize=(8, 5))
+    sns.countplot(data=df, x='Class', palette='viridis')
+    plt.title('Distribusi Jenis Beras (Cammeo vs Osmancik)')
+    plt.savefig("/Volumes/Data/Program/ML PROJECT/preprocessing/rice_distribution.png")
+    
+    # Correlation Heatmap
+    plt.figure(figsize=(10, 8))
+    numeric_df = df.drop(columns=['Class'])
+    sns.heatmap(numeric_df.corr(), annot=True, cmap='coolwarm', fmt='.2f')
+    plt.title('Korelasi Fitur Morfologi Beras')
+    plt.savefig("/Volumes/Data/Program/ML PROJECT/preprocessing/rice_correlation.png")
+    print("✅ EDA plots saved.")
 
-
-def remove_duplicates(df):
-    """
-    Menghapus data duplikat dari dataset.
+def preprocess_data(df):
+    print("⚙️ Preprocessing data...")
     
-    Args:
-        df (pd.DataFrame): Dataset input
+    # 1. Handling Missing Values
+    df = df.dropna()
     
-    Returns:
-        pd.DataFrame: Dataset tanpa duplikat
-    """
-    print("\n[3/6] Menghapus data duplikat...")
-    before = df.shape[0]
-    df = df.drop_duplicates()
-    after = df.shape[0]
-    print(f"  Dihapus: {before - after} baris duplikat")
-    print(f"  Sisa data: {after} baris")
-    return df
-
-
-def remove_outliers_iqr(df, columns):
-    """
-    Menghapus outlier menggunakan metode Interquartile Range (IQR).
+    # 2. Label Encoding Target (Cammeo=0, Osmancik=1)
+    df['Class'] = df['Class'].map({'Cammeo': 0, 'Osmancik': 1})
     
-    Args:
-        df (pd.DataFrame): Dataset input
-        columns (list): Daftar kolom untuk deteksi outlier
-    
-    Returns:
-        pd.DataFrame: Dataset tanpa outlier
-    """
-    print("\n[4/6] Menghapus outlier (IQR)...")
-    df_clean = df.copy()
-    total_removed = 0
-    
-    for col in columns:
-        Q1 = df_clean[col].quantile(0.25)
-        Q3 = df_clean[col].quantile(0.75)
+    # 3. Outlier Removal (IQR Method)
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    for col in numeric_cols:
+        Q1 = df[col].quantile(0.25)
+        Q3 = df[col].quantile(0.75)
         IQR = Q3 - Q1
         lower_bound = Q1 - 1.5 * IQR
         upper_bound = Q3 + 1.5 * IQR
-        before = len(df_clean)
-        df_clean = df_clean[(df_clean[col] >= lower_bound) & (df_clean[col] <= upper_bound)]
-        after = len(df_clean)
-        removed = before - after
-        if removed > 0:
-            total_removed += removed
-            print(f"  {col}: {removed} outlier dihapus")
+        df = df[(df[col] >= lower_bound) & (df[col] <= upper_bound)]
     
-    print(f"  Total outlier dihapus: {total_removed}")
-    print(f"  Sisa data: {len(df_clean)} baris")
-    return df_clean
-
-
-def preprocess_data(df):
-    """
-    Melakukan preprocessing data:
-    - Konversi quality ke binary (good/bad)
-    - StandardScaler normalisasi
-    - Train-test split (80:20)
+    # Final check for NaNs after filtering
+    df = df.dropna()
     
-    Args:
-        df (pd.DataFrame): Dataset yang sudah dibersihkan
+    # 4. Feature Scaling (StandardScaler)
+    X = df.drop(columns=['Class'])
+    y = df['Class']
     
-    Returns:
-        tuple: (X_train, X_test, y_train, y_test) hasil preprocessing
-    """
-    print("\n[5/6] Preprocessing data...")
-    
-    # Binning: quality >= 7 -> Good (1), < 7 -> Bad (0)
-    df['quality_label'] = (df['quality'] >= 7).astype(int)
-    print(f"  Distribusi quality_label (0=Bad, 1=Good):")
-    print(f"  {df['quality_label'].value_counts().to_string()}")
-    
-    # Hapus kolom quality asli
-    df = df.drop('quality', axis=1)
-    
-    # Split fitur dan target
-    X = df.drop('quality_label', axis=1)
-    y = df['quality_label']
-    
-    # Standarisasi fitur
     scaler = StandardScaler()
-    X_scaled = pd.DataFrame(
-        scaler.fit_transform(X),
-        columns=X.columns,
-        index=X.index
-    )
+    X_scaled = scaler.fit_transform(X)
+    X_scaled_df = pd.DataFrame(X_scaled, columns=X.columns)
     
-    # Train-test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_scaled, y, test_size=0.2, random_state=42, stratify=y
-    )
+    # 5. Train-Test Split (80:20)
+    X_train, X_test, y_train, y_test = train_test_split(X_scaled_df, y, test_size=0.2, random_state=42, stratify=y)
     
-    print(f"  X_train: {X_train.shape}, X_test: {X_test.shape}")
-    print(f"  y_train: {y_train.shape}, y_test: {y_test.shape}")
-    
-    return X_train, X_test, y_train, y_test
-
-
-def save_data(X_train, X_test, y_train, y_test, output_dir):
-    """
-    Menyimpan dataset hasil preprocessing ke file CSV.
-    
-    Args:
-        X_train, X_test, y_train, y_test: Data hasil split
-        output_dir (str): Direktori output
-    """
-    print("\n[6/6] Menyimpan dataset hasil preprocessing...")
-    
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Gabungkan X dan y, lalu simpan
+    # Gabungkan kembali untuk disimpan
     train_data = pd.concat([X_train.reset_index(drop=True), y_train.reset_index(drop=True)], axis=1)
     test_data = pd.concat([X_test.reset_index(drop=True), y_test.reset_index(drop=True)], axis=1)
     
-    train_path = os.path.join(output_dir, 'winequality_preprocessing_train.csv')
-    test_path = os.path.join(output_dir, 'winequality_preprocessing_test.csv')
-    
-    train_data.to_csv(train_path, index=False)
-    test_data.to_csv(test_path, index=False)
-    
-    print(f"  Train data disimpan: {train_path} ({train_data.shape})")
-    print(f"  Test data disimpan: {test_path} ({test_data.shape})")
-    print("\n✅ Preprocessing selesai!")
-
+    return train_data, test_data
 
 def main():
-    """
-    Fungsi utama yang mengorkestrasi seluruh pipeline preprocessing.
-    """
-    print("=" * 60)
-    print("AUTOMATED PREPROCESSING - WINE QUALITY DATASET")
-    print("Author: Wilda Ariffatul Faisalnur")
-    print("=" * 60)
+    # Buat direktori jika belum ada
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(SUBMISSION_DIR, exist_ok=True)
     
-    # Tentukan path
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    raw_data_path = os.path.join(script_dir, '..', 'winequality-red.csv')
-    output_dir = os.path.join(script_dir, 'namadataset_preprocessing')
+    # Load
+    df = load_data(DATA_PATH)
     
-    # Jika raw data tidak ditemukan di parent, coba di direktori saat ini
-    if not os.path.exists(raw_data_path):
-        raw_data_path = os.path.join(script_dir, 'winequality-red.csv')
-    if not os.path.exists(raw_data_path):
-        raw_data_path = 'winequality-red.csv'
-    
-    # 1. Load data
-    df = load_data(raw_data_path)
-    
-    # 2. EDA
+    # EDA
     perform_eda(df)
     
-    # 3. Hapus duplikat
-    df = remove_duplicates(df)
+    # Preprocess
+    train_df, test_df = preprocess_data(df)
     
-    # 4. Hapus outlier
-    feature_cols = df.columns.drop('quality')
-    df = remove_outliers_iqr(df, feature_cols)
+    # Save Output
+    train_path = os.path.join(OUTPUT_DIR, "rice_preprocessing_train.csv")
+    test_path = os.path.join(OUTPUT_DIR, "rice_preprocessing_test.csv")
     
-    # 5. Preprocessing (binning, scaling, split)
-    X_train, X_test, y_train, y_test = preprocess_data(df)
+    train_df.to_csv(train_path, index=False)
+    test_df.to_csv(test_path, index=False)
     
-    # 6. Simpan hasil
-    save_data(X_train, X_test, y_train, y_test, output_dir)
-
+    # Copy to submission folder
+    train_sub_path = os.path.join(SUBMISSION_DIR, "rice_preprocessing_train.csv")
+    test_sub_path = os.path.join(SUBMISSION_DIR, "rice_preprocessing_test.csv")
+    train_df.to_csv(train_sub_path, index=False)
+    test_df.to_csv(test_sub_path, index=False)
+    
+    print(f"✅ Preprocessing Selesai!")
+    print(f"Data Train: {train_df.shape}")
+    print(f"Data Test : {test_df.shape}")
+    print(f"File disimpan di: {OUTPUT_DIR}")
 
 if __name__ == "__main__":
     main()
